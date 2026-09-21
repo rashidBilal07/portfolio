@@ -1,0 +1,262 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens. Dark is the default; [data-theme="light"] flips the surface
+   scale. Accent is Android green, kept identical across themes so brand
+   recognition survives the toggle.
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #07090c;
+  --bg-elev: #0c1015;
+  --bg-elev-2: #11161d;
+  --line: #1c232c;
+  --line-strong: #2a343f;
+  --fg: #e8edf3;
+  --fg-muted: #98a4b3;
+  --fg-dim: #66727f;
+
+  --accent: #3ddc84;
+  --accent-dim: #2bb86c;
+  --accent-glow: rgba(61, 220, 132, 0.14);
+  --accent-2: #7c6cff;
+
+  --grid: rgba(255, 255, 255, 0.028);
+}
+
+:root[data-theme="light"] {
+  --bg: #fbfbfa;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #f4f5f3;
+  --line: #e3e5e0;
+  --line-strong: #c9ccc5;
+  --fg: #101413;
+  --fg-muted: #565d5a;
+  --fg-dim: #8a918d;
+
+  --accent: #17a35c;
+  --accent-dim: #0f7f46;
+  --accent-glow: rgba(23, 163, 92, 0.1);
+  --accent-2: #5a48e0;
+
+  --grid: rgba(0, 0, 0, 0.032);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elev: var(--bg-elev);
+  --color-elev2: var(--bg-elev-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-dim: var(--fg-dim);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent2: var(--accent-2);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, "SFMono-Regular", monospace;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--accent);
+  color: #07090c;
+}
+
+/* Blueprint grid backdrop -------------------------------------------------- */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.grid-fade {
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 75%);
+}
+
+/* Typography helpers ------------------------------------------------------ */
+.mono {
+  font-family: var(--font-mono-face), ui-monospace, "SFMono-Regular", monospace;
+  font-feature-settings: "ss01", "cv01";
+}
+
+.label {
+  font-family: var(--font-mono-face), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.display {
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.92;
+}
+
+/* Accent underline that draws in on reveal -------------------------------- */
+.accent-underline {
+  position: relative;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.accent-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0.08em;
+  height: 0.09em;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  animation: draw 0.9s 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Marquee ----------------------------------------------------------------- */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 42s linear infinite;
+}
+.marquee-wrap:hover .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Orbiting hero badges ---------------------------------------------------- */
+.orbit {
+  animation: spin 34s linear infinite;
+}
+.orbit-counter {
+  animation: spin 34s linear infinite reverse;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Caret for the test-run terminal ------------------------------------------ */
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 0.15em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  animation: blink 1.05s steps(2, start) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Status dot -------------------------------------------------------------- */
+.pulse-dot {
+  position: relative;
+}
+.pulse-dot::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: pulse 2.2s ease-out infinite;
+}
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+/* Phone mockup frame ----------------------------------------------------- */
+.phone {
+  border-radius: 2rem;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev-2);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 30px 70px -30px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  position: relative;
+}
+.phone::before {
+  /* punch-hole camera */
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 2;
+}
+
+/* Custom scrollbar ------------------------------------------------------- */
+.thin-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: var(--line);
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 9999px;
+}
+
+/* Respect reduced motion ------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

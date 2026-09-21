@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.env*.local
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+
+# Runtime content written by /admin. Commit it if you want your content
+# versioned in git, or uncomment to ignore it if the server is the source
+# of truth.
+# content.json
