@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { CursorTrail } from "@/components/CursorTrail";
 import { getContent } from "@/lib/store";
 import "./globals.css";
 
@@ -101,10 +100,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <style>{`[style*="opacity:0"]{opacity:1!important;transform:none!important}`}</style>
         </noscript>
       </head>
-      <body className={`${inter.variable} ${mono.variable}`}>
-        {children}
-        <CursorTrail />
-      </body>
+      <body className={`${inter.variable} ${mono.variable}`}>{children}</body>
     </html>
   );
 }
