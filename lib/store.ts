@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { cache } from "react";
-import { head, put } from "@vercel/blob";
+import { get, head, put } from "@vercel/blob";
 import { contentSchema, type Content } from "./schema";
 import { defaultContent } from "@/data/defaults";
 
@@ -15,25 +15,43 @@ import { defaultContent } from "@/data/defaults";
  * ---------------------------------------------------------------------------
  * TWO BACKENDS, CHOSEN AUTOMATICALLY.
  *
- * Vercel Blob — used whenever BLOB_READ_WRITE_TOKEN is set, which Vercel
- *   injects into every environment once a Blob store is linked to the project.
- *   This is what makes /admin work in production: Vercel's runtime filesystem
- *   is read-only and not shared between invocations, so writing a file there
+ * Vercel Blob — used whenever the project is linked to a Blob store. This is
+ *   what makes /admin work in production: Vercel's runtime filesystem is
+ *   read-only and not shared between invocations, so writing a file there
  *   fails with EROFS and would not persist even if it succeeded.
  *
  * Local filesystem — used otherwise, so `next dev` needs no token and no
  *   network. Also correct for a VPS or a container with a mounted volume.
  *
- * To move somewhere else entirely, replace `readRaw` and `writeRaw`. Nothing
- * else in the app touches storage.
+ * To move somewhere else, replace `readRaw` and `writeRaw`. Nothing else in
+ * the app touches storage.
  * ---------------------------------------------------------------------------
  */
 
-/** Object key inside the Blob store. Stable, so the URL never changes. */
+/** Object key inside the Blob store. Stable, so there is exactly one document. */
 const BLOB_KEY = "content.json";
 
-const blobToken = () => process.env.BLOB_READ_WRITE_TOKEN;
-const usingBlob = () => Boolean(blobToken());
+/**
+ * Vercel sets BLOB_STORE_ID when a store is *connected* to the project (the
+ * OIDC path, which is the default) and BLOB_READ_WRITE_TOKEN when the store is
+ * *created*. Either one means we should be talking to Blob, so check both —
+ * keying off only the token would silently fall back to the filesystem on an
+ * OIDC-only project and every save would fail.
+ *
+ * The SDK resolves the actual credential itself, preferring OIDC, so nothing
+ * here needs to pass a token explicitly.
+ */
+const usingBlob = () =>
+  Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
+
+/**
+ * A store's access mode is fixed at creation and cannot be changed later.
+ * Private is the right default here: the document is only ever read by the
+ * server, and private reads can be made strongly consistent. Set
+ * BLOB_ACCESS=public only if the store was created as a public one.
+ */
+const BLOB_ACCESS: "private" | "public" =
+  process.env.BLOB_ACCESS === "public" ? "public" : "private";
 
 const filePath = () =>
   process.env.CONTENT_STORE_PATH
@@ -44,32 +62,52 @@ const filePath = () =>
 /* Backends                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/** True for "the blob does not exist yet", as opposed to a real failure. */
+function isNotFound(err: unknown): boolean {
+  const name = (err as { name?: string })?.name ?? "";
+  const msg = String((err as { message?: string })?.message ?? err);
+  return /BlobNotFound/i.test(name) || /not.?found|does not exist/i.test(msg);
+}
+
 async function readBlob(): Promise<unknown | null> {
-  // `head` gives us both existence and `uploadedAt`. Blob URLs are served
-  // through a CDN, so the timestamp is used to bust that cache — without it a
-  // save can appear to have done nothing until the edge entry expires.
-  let meta;
-  try {
-    meta = await head(BLOB_KEY, { token: blobToken() });
-  } catch {
-    return null; // not written yet — fall back to the seed
+  if (BLOB_ACCESS === "private") {
+    // useCache:false guarantees we see the write we just made. Without it a
+    // save can appear to do nothing for up to a minute while the CDN copy
+    // expires.
+    let res;
+    try {
+      res = await get(BLOB_KEY, { access: "private", useCache: false });
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+    if (!res || res.statusCode !== 200 || !res.stream) return null;
+    const text = await new Response(res.stream as unknown as ReadableStream).text();
+    return JSON.parse(text);
   }
 
-  const res = await fetch(`${meta.url}?v=${Date.parse(meta.uploadedAt as unknown as string)}`, {
-    cache: "no-store",
-  });
+  // Public store: the blob is fetched straight from the CDN, so the URL needs
+  // a cache-buster keyed on the upload time or a save looks like a no-op.
+  let meta;
+  try {
+    meta = await head(BLOB_KEY);
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
+  const stamp = new Date(meta.uploadedAt).getTime();
+  const res = await fetch(`${meta.url}?v=${stamp}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`[store] blob fetch failed: ${res.status}`);
   return res.json();
 }
 
 async function writeBlob(value: Content): Promise<void> {
   await put(BLOB_KEY, JSON.stringify(value, null, 2), {
-    access: "public",
-    addRandomSuffix: false, // keep one stable object rather than a new one per save
+    access: BLOB_ACCESS,
+    addRandomSuffix: false, // one stable object rather than a new one per save
     allowOverwrite: true,
     contentType: "application/json",
     cacheControlMaxAge: 0,
-    token: blobToken(),
   });
 }
 
@@ -181,5 +219,5 @@ export async function storeExists(): Promise<boolean> {
 
 /** Human-readable description of the active backend, shown in the admin UI. */
 export function contentStorePath(): string {
-  return usingBlob() ? `Vercel Blob · ${BLOB_KEY}` : filePath();
+  return usingBlob() ? `Vercel Blob (${BLOB_ACCESS}) · ${BLOB_KEY}` : filePath();
 }

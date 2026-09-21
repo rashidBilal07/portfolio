@@ -194,14 +194,23 @@ The store picks its backend automatically:
 
 | Environment | Backend | Notes |
 | --- | --- | --- |
-| Vercel (any env with `BLOB_READ_WRITE_TOKEN`) | **Vercel Blob** | What makes `/admin` saves work in production |
+| Vercel (any env with `BLOB_STORE_ID` or `BLOB_READ_WRITE_TOKEN`) | **Vercel Blob** | What makes `/admin` saves work in production |
 | `npm run dev`, VPS, Docker, Railway, Render, Fly | Local filesystem | `./content.json`, or `CONTENT_STORE_PATH` for a mounted volume |
 
 Nothing to configure in code — the presence of `BLOB_READ_WRITE_TOKEN` decides.
 
-**One-time Vercel setup:** project → **Storage** → **Create** → **Blob** →
-connect it to the project. Vercel injects `BLOB_READ_WRITE_TOKEN` into every
-environment from then on. Redeploy once so the running deployment picks it up.
+**One-time Vercel setup:**
+
+1. **Storage** → **Create** → **Blob**. Choose **Private** and a region — the
+   access mode is fixed at creation and cannot be changed later.
+2. Open the store → **Projects** tab → **Connect to Project**, and pick this
+   project plus the environments you want.
+3. **Redeploy.** A running deployment will not pick up newly added variables.
+
+Vercel sets the credentials itself: `BLOB_STORE_ID` and `VERCEL_OIDC_TOKEN`
+(the default, auto-rotating credential) plus `BLOB_READ_WRITE_TOKEN`. You never
+paste a token anywhere. To point local dev at the real store, run
+`vercel env pull`; otherwise local keeps using the filesystem.
 
 Without that token on Vercel the app falls back to the filesystem, where writes
 fail with `EROFS` — the runtime filesystem there is read-only and not shared
@@ -210,10 +219,11 @@ reads fall back to the seed in `data/`; only saving breaks.
 
 Two things worth knowing about the Blob backend:
 
-- The object is stored with `access: "public"`, so `content.json` is readable at
-  its Blob URL by anyone who has it. That is the same content the site already
-  publishes, so there is nothing in it that is not already on the page — but do
-  not put anything private in the content model.
+- The store is private, so `content.json` is only readable by the server, and
+  reads use `useCache: false` for strong consistency — a save is visible
+  immediately rather than after the CDN copy expires. If you created a public
+  store instead, set `BLOB_ACCESS=public`; reads then go through the CDN with a
+  cache-busting query parameter and the object is readable by anyone with the URL.
 - Writes are serialized per instance, not globally. Two saves landing on
   different serverless instances at the same moment can still race. Fine for a
   single editor; it is not real locking.
