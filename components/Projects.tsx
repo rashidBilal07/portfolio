@@ -297,7 +297,7 @@ export function Projects({ projects }: { projects: Project[] }) {
       {rest.length > 0 && (
         <>
           <Reveal>
-            <div className="label mt-20 border-b border-line pb-3">ALSO BUILT</div>
+            <div className="label mt-20 border-b border-line pb-3">ALSO TESTED</div>
           </Reveal>
           <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {rest.map((p, i) => (

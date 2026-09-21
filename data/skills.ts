@@ -34,10 +34,11 @@ export const skillGroups: SkillGroup[] = [
       "Firebase Test Lab",
       "Samsung Test Lab",
       "Kobiton",
-      "Slack",
-      "Google Sheets",
-      "MS Office",
     ],
+  },
+  {
+    label: "REPORTING & TRACKING",
+    items: ["Jira", "ClickUp", "Slack", "Discord", "Google Sheets", "MS Office"],
   },
   {
     label: "PLATFORMS",
