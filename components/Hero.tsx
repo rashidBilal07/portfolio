@@ -105,7 +105,7 @@ function OrbitPortrait({ profile }: { profile: Profile }) {
 
       <div className="absolute inset-[16%] grid place-items-center overflow-hidden rounded-full border border-line-strong bg-avatar">
         {avatar.failed ? (
-          <span className="mono px-4 text-center text-[9.5px] tracking-widest text-[#6b7280]">
+          <span className="mono px-4 text-center text-[9.5px] tracking-widest text-[#e8edf3]">
             /public{profile.avatar}
           </span>
         ) : (

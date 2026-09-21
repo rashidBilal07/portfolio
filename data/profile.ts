@@ -27,7 +27,9 @@ export const profile: Omit<Profile, "terminalLines"> = {
   linkedinHandle: "/in/abdul-hafeez-sqa",
   resumeUrl: "/abdul-hafeez-sqa-engineer.pdf",
   availability: "OPEN TO WORK",
-  avatar: "/avatar.jpg",
+  // Keyed PNG: the white backdrop of avatar.jpg is transparent here, so the
+  // --avatar-bg token in globals.css controls the colour behind the portrait.
+  avatar: "/avatar.png",
 
   /** Badges that orbit the portrait in the hero. Keep to 5–6. */
   orbitBadges: [
