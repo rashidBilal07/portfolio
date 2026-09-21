@@ -7,7 +7,6 @@ out
 *.tsbuildinfo
 next-env.d.ts
 
-# Runtime content written by /admin. Commit it if you want your content
-# versioned in git, or uncomment to ignore it if the server is the source
-# of truth.
-# content.json
+# Runtime content written by /admin when using the local filesystem backend.
+# Production stores this in Vercel Blob, so the file is a dev artifact only.
+content.json

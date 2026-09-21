@@ -1,6 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { cache } from "react";
+import { head, put } from "@vercel/blob";
 import { contentSchema, type Content } from "./schema";
 import { defaultContent } from "@/data/defaults";
 
@@ -12,26 +13,69 @@ import { defaultContent } from "@/data/defaults";
  * store if it exists and is valid, otherwise the seed.
  *
  * ---------------------------------------------------------------------------
- * THIS BACKEND WRITES TO THE LOCAL FILESYSTEM.
+ * TWO BACKENDS, CHOSEN AUTOMATICALLY.
  *
- * That works in `next dev`, in `next start` on a VPS, in Docker with a mounted
- * volume, and on Railway/Render/Fly. It does NOT work on Vercel or any other
- * serverless platform, where the filesystem is read-only at runtime and not
- * shared between invocations — writes there will fail with EROFS.
+ * Vercel Blob — used whenever BLOB_READ_WRITE_TOKEN is set, which Vercel
+ *   injects into every environment once a Blob store is linked to the project.
+ *   This is what makes /admin work in production: Vercel's runtime filesystem
+ *   is read-only and not shared between invocations, so writing a file there
+ *   fails with EROFS and would not persist even if it succeeded.
  *
- * To move to a database, replace `readRaw` and `writeRaw` below. Nothing else
- * in the app touches storage.
+ * Local filesystem — used otherwise, so `next dev` needs no token and no
+ *   network. Also correct for a VPS or a container with a mounted volume.
+ *
+ * To move somewhere else entirely, replace `readRaw` and `writeRaw`. Nothing
+ * else in the app touches storage.
  * ---------------------------------------------------------------------------
  */
 
-const storePath = () =>
+/** Object key inside the Blob store. Stable, so the URL never changes. */
+const BLOB_KEY = "content.json";
+
+const blobToken = () => process.env.BLOB_READ_WRITE_TOKEN;
+const usingBlob = () => Boolean(blobToken());
+
+const filePath = () =>
   process.env.CONTENT_STORE_PATH
     ? path.resolve(process.env.CONTENT_STORE_PATH)
     : path.join(process.cwd(), "content.json");
 
-async function readRaw(): Promise<unknown | null> {
+/* -------------------------------------------------------------------------- */
+/* Backends                                                                   */
+/* -------------------------------------------------------------------------- */
+
+async function readBlob(): Promise<unknown | null> {
+  // `head` gives us both existence and `uploadedAt`. Blob URLs are served
+  // through a CDN, so the timestamp is used to bust that cache — without it a
+  // save can appear to have done nothing until the edge entry expires.
+  let meta;
   try {
-    return JSON.parse(await readFile(storePath(), "utf8"));
+    meta = await head(BLOB_KEY, { token: blobToken() });
+  } catch {
+    return null; // not written yet — fall back to the seed
+  }
+
+  const res = await fetch(`${meta.url}?v=${Date.parse(meta.uploadedAt as unknown as string)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`[store] blob fetch failed: ${res.status}`);
+  return res.json();
+}
+
+async function writeBlob(value: Content): Promise<void> {
+  await put(BLOB_KEY, JSON.stringify(value, null, 2), {
+    access: "public",
+    addRandomSuffix: false, // keep one stable object rather than a new one per save
+    allowOverwrite: true,
+    contentType: "application/json",
+    cacheControlMaxAge: 0,
+    token: blobToken(),
+  });
+}
+
+async function readFileStore(): Promise<unknown | null> {
+  try {
+    return JSON.parse(await readFile(filePath(), "utf8"));
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return null; // no store yet — fall back to the seed
@@ -39,8 +83,8 @@ async function readRaw(): Promise<unknown | null> {
   }
 }
 
-async function writeRaw(value: Content): Promise<void> {
-  const target = storePath();
+async function writeFileStore(value: Content): Promise<void> {
+  const target = filePath();
   await mkdir(path.dirname(target), { recursive: true });
   // Write to a sibling temp file and rename, so a crash mid-write cannot leave
   // a truncated store behind.
@@ -48,6 +92,10 @@ async function writeRaw(value: Content): Promise<void> {
   await writeFile(tmp, JSON.stringify(value, null, 2), "utf8");
   await rename(tmp, target);
 }
+
+const readRaw = (): Promise<unknown | null> => (usingBlob() ? readBlob() : readFileStore());
+const writeRaw = (value: Content): Promise<void> =>
+  usingBlob() ? writeBlob(value) : writeFileStore(value);
 
 /* -------------------------------------------------------------------------- */
 /* Reads                                                                      */
@@ -58,7 +106,15 @@ async function writeRaw(value: Content): Promise<void> {
  * sections reads the store once.
  */
 export const getContent = cache(async (): Promise<Content> => {
-  const raw = await readRaw();
+  let raw: unknown | null;
+  try {
+    raw = await readRaw();
+  } catch (err) {
+    // A storage outage must not take the whole site down — every page can
+    // still render from the seed.
+    console.error("[store] read failed, serving defaults instead:", err);
+    return defaultContent;
+  }
   if (raw === null) return defaultContent;
 
   const parsed = contentSchema.safeParse(raw);
@@ -67,7 +123,7 @@ export const getContent = cache(async (): Promise<Content> => {
   // A hand-edited or partially-migrated store should degrade to the seed rather
   // than crash every page.
   console.error(
-    "[store] content.json failed validation, serving defaults instead:",
+    "[store] stored content failed validation, serving defaults instead:",
     parsed.error.issues.slice(0, 5),
   );
   return defaultContent;
@@ -88,8 +144,9 @@ export async function getProject(slug: string) {
  *
  * Serialized through a promise chain because two concurrent admin requests
  * would otherwise read the same base and one would silently lose its write.
- * That is per-process only — it is not a substitute for real locking if you
- * ever run more than one instance.
+ * That is per-process only. On serverless that means per-instance, so two
+ * saves landing on different instances at the same moment can still race —
+ * acceptable for a single-editor admin, but it is not real locking.
  */
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -115,7 +172,14 @@ export function updateContent(mutate: (draft: Content) => void | Promise<void>):
 
 /** True when the store has been written at least once. */
 export async function storeExists(): Promise<boolean> {
-  return (await readRaw()) !== null;
+  try {
+    return (await readRaw()) !== null;
+  } catch {
+    return false;
+  }
 }
 
-export const contentStorePath = storePath;
+/** Human-readable description of the active backend, shown in the admin UI. */
+export function contentStorePath(): string {
+  return usingBlob() ? `Vercel Blob · ${BLOB_KEY}` : filePath();
+}

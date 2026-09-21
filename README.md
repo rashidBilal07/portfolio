@@ -188,24 +188,38 @@ an open state.**
 Public pages stay statically rendered; every write calls `revalidatePath`, so
 an edit is live on the next request without a rebuild.
 
-### ⚠️ This will not work on Vercel
+### Where the content is stored
 
-The store writes to the local filesystem. Vercel and other serverless hosts
-have a read-only runtime filesystem that is not shared between invocations, so
-saves fail with `EROFS`. Your options:
+The store picks its backend automatically:
 
-| Host | Works? |
-| --- | --- |
-| `npm run dev` locally | ✅ |
-| VPS / Docker / Railway / Render / Fly (`npm start`) | ✅ — set `CONTENT_STORE_PATH` to a persistent volume |
-| Vercel / Netlify Functions / Cloudflare Workers | ❌ — needs a database |
+| Environment | Backend | Notes |
+| --- | --- | --- |
+| Vercel (any env with `BLOB_READ_WRITE_TOKEN`) | **Vercel Blob** | What makes `/admin` saves work in production |
+| `npm run dev`, VPS, Docker, Railway, Render, Fly | Local filesystem | `./content.json`, or `CONTENT_STORE_PATH` for a mounted volume |
 
-To move to a database, replace `readRaw` and `writeRaw` in
-[lib/store.ts](lib/store.ts). Nothing else in the app touches storage. Postgres
-via Neon or Supabase, or Vercel KV, are all a ~20-line change.
+Nothing to configure in code — the presence of `BLOB_READ_WRITE_TOKEN` decides.
 
-If you deploy the public site to Vercel, the simplest path is to keep editing
-content locally through `/admin`, commit `content.json`, and push.
+**One-time Vercel setup:** project → **Storage** → **Create** → **Blob** →
+connect it to the project. Vercel injects `BLOB_READ_WRITE_TOKEN` into every
+environment from then on. Redeploy once so the running deployment picks it up.
+
+Without that token on Vercel the app falls back to the filesystem, where writes
+fail with `EROFS` — the runtime filesystem there is read-only and not shared
+between invocations. The public site still renders fine in that state, because
+reads fall back to the seed in `data/`; only saving breaks.
+
+Two things worth knowing about the Blob backend:
+
+- The object is stored with `access: "public"`, so `content.json` is readable at
+  its Blob URL by anyone who has it. That is the same content the site already
+  publishes, so there is nothing in it that is not already on the page — but do
+  not put anything private in the content model.
+- Writes are serialized per instance, not globally. Two saves landing on
+  different serverless instances at the same moment can still race. Fine for a
+  single editor; it is not real locking.
+
+To move somewhere else, replace `readRaw` and `writeRaw` in
+[lib/store.ts](lib/store.ts). Nothing else in the app touches storage.
 
 ### Endpoints
 
